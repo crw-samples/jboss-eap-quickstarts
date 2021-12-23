@@ -1,0 +1,70 @@
+schemaVersion: 2.1.0
+metadata:
+  name: jboss-eap-quickstarts
+attributes:
+  che-theia.eclipse.org/sidecar-policy: mergeImage
+components:
+  - name: tools
+    container:
+      image: registry.redhat.io/jboss-eap-7/eap74-openjdk8-openshift-rhel7:7.4.0
+      env:
+        - name: MAVEN_OPTS
+          value: "-Xmx200m -XX:+UseParallelGC -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=20 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xms20m -Djava.security.egd=file:/dev/./urandom -Duser.home=/home/jboss"
+        - name: JAVA_OPTS_APPEND
+          value: "-Xrunjdwp:transport=dt_socket,address=8000,server=y,suspend=n -Dsun.util.logging.disableCallerCheck=true"
+      memoryLimit: 3Gi
+      endpoints:
+        - exposure: public
+          name: eap
+          protocol: http
+          targetPort: 8080
+          path: /index.jsp
+        - exposure: internal
+          name: jgroups
+          protocol: http
+          targetPort: 7600
+      volumeMounts:
+        - name: m2
+          path: /home/jboss/.m2
+        - name: gradle
+          path: /home/jboss/.gradle
+  - name: m2
+    volume:
+      size: 1G
+  - name: gradle
+    volume:
+      size: 1G
+commands:
+  - id: build
+    exec:
+      component: tools
+      workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
+      commandLine: scl enable rh-maven36 'mvn clean install'
+      group:
+        kind: build
+  - id: configure-web-server
+    exec:
+      component: tools
+      workingDir: /opt/eap/bin
+      commandLine: >-
+          ./jboss-cli.sh --connect --command="data-source add --name=ExampleDS
+          --jndi-name=java:jboss/datasources/ExampleDS --driver-name=h2
+          --connection-url=jdbc:h2:mem:test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+          --user-name=sa --password=sa" && echo 'Server was configured'
+      group:
+        kind: build
+  - id: copy-war
+    exec:
+      component: tools
+      workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
+      commandLine: cp target/*.war /opt/eap/standalone/deployments/ROOT.war && 
+          echo 'Archive was deployed, click on eap endpoint from Workspace view to open the application'
+      group:
+        kind: run
+  - id: hot-update
+    exec:
+      component: tools
+      workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
+      commandLine: "scl enable rh-maven36 'mvn clean install' && sleep 2 && cp target/*.war /opt/eap/standalone/deployments/ROOT.war"
+      group:
+        kind: run
