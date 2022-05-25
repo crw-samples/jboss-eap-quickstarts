@@ -1,18 +1,25 @@
 schemaVersion: 2.1.0
 metadata:
   name: jboss-eap-quickstarts
-attributes:
-  che-theia.eclipse.org/sidecar-policy: mergeImage
 components:
   - name: tools
     container:
-      image: registry.redhat.io/jboss-eap-7/eap74-openjdk8-openshift-rhel7:7.4.0
+      image: quay.io/devspaces/udi-rhel8:3.1
+      memoryLimit: 3Gi
+      volumeMounts:
+        - name: m2
+          path: /home/user/.m2
+  - name: eap
+    container:
+      image: registry.redhat.io/jboss-eap-7/eap74-openjdk11-openshift-rhel8:7.4.4
       env:
         - name: MAVEN_OPTS
           value: "-Xmx200m -XX:+UseParallelGC -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=20 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xms20m -Djava.security.egd=file:/dev/./urandom -Duser.home=/home/jboss"
         - name: JAVA_OPTS_APPEND
           value: "-Xrunjdwp:transport=dt_socket,address=8000,server=y,suspend=n -Dsun.util.logging.disableCallerCheck=true"
-      memoryLimit: 3Gi
+        - value: '-Dmaven.repo.local=/home/jboss/.m2/repository/repository -Dcom.redhat.xpaas.repo.jbossorg'
+          name: MVN_ARGS_APPEND
+      memoryLimit: 1Gi
       endpoints:
         - exposure: public
           name: eap
@@ -26,25 +33,20 @@ components:
       volumeMounts:
         - name: m2
           path: /home/jboss/.m2
-        - name: gradle
-          path: /home/jboss/.gradle
   - name: m2
     volume:
       size: 1G
-  - name: gradle
-    volume:
-      size: 1G
 commands:
-  - id: build
+  - id: 1-build
     exec:
       component: tools
       workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
-      commandLine: scl enable rh-maven36 'mvn clean install'
+      commandLine: mvn ${MVN_ARGS_APPEND} clean install
       group:
         kind: build
-  - id: configure-web-server
+  - id: 2-configure-web-server
     exec:
-      component: tools
+      component: eap
       workingDir: /opt/eap/bin
       commandLine: >-
           ./jboss-cli.sh --connect --command="data-source add --name=ExampleDS
@@ -53,18 +55,18 @@ commands:
           --user-name=sa --password=sa" && echo 'Server was configured'
       group:
         kind: build
-  - id: copy-war
+  - id: 3-copy-war
     exec:
-      component: tools
+      component: eap
       workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
       commandLine: cp target/*.war /opt/eap/standalone/deployments/ROOT.war && 
           echo 'Archive was deployed, click on eap endpoint from Workspace view to open the application'
       group:
         kind: run
-  - id: hot-update
+  - id: 4-hot-update
     exec:
-      component: tools
+      component: eap
       workingDir: ${PROJECTS_ROOT}/jboss-eap-quickstarts/kitchensink-jsp
-      commandLine: "scl enable rh-maven36 'mvn clean install' && sleep 2 && cp target/*.war /opt/eap/standalone/deployments/ROOT.war"
+      commandLine: "mvn ${MVN_ARGS_APPEND} clean install && sleep 2 && cp target/*.war /opt/eap/standalone/deployments/ROOT.war"
       group:
         kind: run
